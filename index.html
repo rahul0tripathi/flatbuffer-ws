@@ -1,0 +1,138 @@
+<!DOCTYPE HTML>
+
+<html>
+<head>
+   
+    
+
+</head>
+
+<body>
+    <script type="module" src="./flatlib/flb/flatbuffers.js"></script>
+    <script  src="./flatlib/signals_generated.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script type="module" type = "text/javascript">
+        import flatbuffers from './flatlib/flb/flatbuffers.js'
+        const OnMessageWrapper = (event)=>{
+       var data = new Uint8Array(event.data)
+       var buf = new flatbuffers.ByteBuffer(data)
+       var _Event = events.Event.getRootAsEvent(buf)
+       var event_destructured = {}
+       event_destructured.command = {}
+       var command = _Event.Command()
+       if (command == null){
+        return null
+       }
+       event_destructured.command.code = command.code()
+       event_destructured.command.cmd = command.command()
+       var uninonType = _Event.PayloadType()
+        if (events.DataName[uninonType] == 'Lobbyinfo'){
+            let _lobbyInfo = new events.Lobbyinfo()
+            _Event.Payload(_lobbyInfo)
+            event_destructured.payload = {}
+            event_destructured.payload.id = _lobbyInfo.id()
+            event_destructured.payload.maxplayers =  _lobbyInfo.maxplayers()
+            var _playersLength = _lobbyInfo.playersLength()
+            event_destructured.payload.players = []
+            for (let i = 0 ; i<_playersLength;i++){
+                var _userData = new events.User()
+                _lobbyInfo.players(i,_userData)
+                event_destructured.payload.players.push({
+                    username:_userData.username(),
+                    id:_userData.id()
+                })
+            }
+        }else if (events.DataName[uninonType] == 'Connected'){
+                event_destructured.payload = {}
+                let _connected = new events.Connected()
+                _Event.Payload(_connected)
+                event_destructured.payload.message = _connected.message()
+        }else if (events.DataName[uninonType] == 'SessionEnd'){
+            event_destructured.payload = {}
+            let _sessend = new events.SessionEnd()
+                _Event.Payload(_sessend)
+                event_destructured.payload.userId = _sessend.userId()
+        }else if (events.DataName[uninonType] == 'Gamedata'){
+            let _gamedata = new events.Gamedata()
+            _Event.payload(_gamedata)
+            event_destructured.payload.url = _gamedata.url()
+        }else if (events.DataName[uninonType] == 'Err'){
+            let _err = new events.Err()
+            _Event.payload(_err)
+            event_destructured.payload.err_code = _err.errCode()
+            event_destructured.payload.err_messgae = _err.message()
+        }
+        return event_destructured
+      }        
+    class GE{
+    #config = null;
+    #instructURL = function(event){
+        return `http://${this.#config.host}/instruct/${event}?userId=${this.#config.userId}&lobbyId=${this.#config.lobbyId}`
+    };
+    #wsInstance = null;
+    constructor(config){
+        this.#config = config
+        this.isLobbyReady = false;
+    }
+    SetLobbyReady = ()=>{
+        this.isLobbyReady = true
+    }
+    onError = function(err){}
+    OnMessageHandler = ()=>{}
+    EndSession = (e)=>{
+        axios.get(this.#instructURL(e)).then(data=>console.log(data))
+    }
+    OnMessage = function (event) {
+    };
+    Send = (data)=>{
+        if(this.isLobbyReady){
+            console.log(data)
+            this.#wsInstance.send(data)
+        }
+    }
+    OnClose = ()=>{}
+    connect() {
+        this.#wsInstance = new WebSocket(`ws://${this.#config.host}/ws?userId=${this.#config.userId}&lobbyId=${this.#config.lobbyId}`)
+        this.#wsInstance.binaryType = 'arraybuffer';
+        this.#wsInstance.onerror = this.OnError 
+        this.#wsInstance.onmessage = this.OnMessage
+        this.#wsInstance.onclose = this.OnClose
+    }
+}
+    var socket = new GE({host:"localhost:8003",userId:"uid",lobbyId:"lobbyId"})
+    // // socket.connect()
+    socket.OnMessage = function(ev){
+        console.log(ev)
+        // var d = null
+        if(socket.isLobbyReady){
+          var  isFlbEvent = OnMessageWrapper(ev)
+          if(isFlbEvent !=null){
+            document.getElementById("msg").innerHTML += '<br>======='+JSON.stringify(isFlbEvent)+'==============<br>'
+          }else{
+              document.getElementById("msg").innerHTML += '<br>======='+ev.data+'==============<br>'
+          }
+        }else{ 
+            var d= OnMessageWrapper(ev)
+                if(d.command.code == 600){
+                    socket.SetLobbyReady()
+                }
+                document.getElementById("msg").innerHTML += '<br>======='+JSON.stringify(d)+'==============<br>'
+            }
+                
+                
+            }
+    window.socket = socket
+    window.send = function send(){
+        socket.Send(document.getElementById('send').value)
+    }
+    </script>
+<div id = "sse">
+    <textarea id="send"></textarea>
+    <p id ="msg"></p>
+    <button onclick="send()">SEND</button>
+    <button onclick="socket.connect()">CONN</button>
+    <button onclick="socket.EndSession('sessionEnd')">END SESSION</button>
+</div>
+
+</body>
+</html>
